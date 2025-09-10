@@ -1,0 +1,7 @@
+# for local transformer fallback (heavy): pip install transformers torch
+openai
+pyswip
+google-generativeai
+
+
+
