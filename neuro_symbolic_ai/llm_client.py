@@ -18,9 +18,9 @@ if openai_key:
     except ImportError:
         client = None
 
-# Try Gemini
+# Try Gemini (always try if key exists, regardless of OpenAI)
 gemini_client = None
-if gemini_key and not client:
+if gemini_key:
     try:
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
@@ -33,23 +33,25 @@ def generate_queries(question: str, traits: List[str] = None, n: int = 3) -> Lis
     """
     Generate DSL queries from a natural language question.
     """
-    if client:  # OpenAI path
+    prompt = f"""
+    You are a neuro-symbolic AI assistant.
+    Given a natural language question about gene-trait associations,
+    return a JSON array of up to {n} structured queries in this DSL:
+
+    DSL format:
+    {{
+      "query": "gene_assoc(Gene, Trait, Score)",
+      "filters": [{{"field": "Trait", "equals": "breast_cancer"}}]
+    }}
+
+    Known traits: {traits}
+
+    Question: {question}
+    """
+
+    # Try OpenAI first
+    if client:
         try:
-            prompt = f"""
-            You are a neuro-symbolic AI assistant.
-            Given a natural language question about gene-trait associations,
-            return a JSON array of up to {n} structured queries in this DSL:
-
-            DSL format:
-            {{
-              "query": "gene_assoc(Gene, Trait, Score)",
-              "filters": [{{"field": "Trait", "equals": "breast_cancer"}}]
-            }}
-
-            Known traits: {traits}
-
-            Question: {question}
-            """
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
@@ -58,48 +60,36 @@ def generate_queries(question: str, traits: List[str] = None, n: int = 3) -> Lis
             text = response.choices[0].message.content.strip()
             return json.loads(text)
         except Exception as e:
-            print(f"[LLM Error, using fallback queries] {e}")
-            return rule_based_queries(question, traits, n)
+            print(f"[OpenAI Error, trying Gemini] {e}")
 
-    elif gemini_client:  # Gemini path
-        prompt = f"""
-        You are a neuro-symbolic AI assistant.
-        Given a natural language question about gene-trait associations,
-        return a JSON array of up to {n} structured queries in this DSL:
-
-        DSL format:
-        {{
-          "query": "gene_assoc(Gene, Trait, Score)",
-          "filters": [{{"field": "Trait", "equals": "breast_cancer"}}]
-        }}
-
-        Known traits: {traits}
-
-        Question: {question}
-        """
+    # Try Gemini next
+    if gemini_client:
         try:
             response = gemini_client.generate_content(prompt)
-            return json.loads(response.text)
+            text = response.text.strip()
+
+            # Clean Gemini output if wrapped in ```json ... ```
+            if text.startswith("```"):
+                text = text.strip("`").replace("json", "", 1).strip()
+
+            return json.loads(text)
         except Exception as e:
             print(f"[Gemini Error, using fallback queries] {e}")
-            return rule_based_queries(question, traits, n)
-
-    else:  # Fallback rule-based
-        return rule_based_queries(question, traits, n)
 
 
 def summarize_results(question: str, results: List[Dict]) -> str:
     """
     Summarize query results into natural language.
-    Uses OpenAI if API key is available, otherwise falls back.
     """
+    prompt = f"""
+    Summarize the following results for the question: "{question}"
+
+    Results: {results}
+    """
+
+    # Try OpenAI first
     if client:
         try:
-            prompt = f"""
-            Summarize the following results for the question: "{question}"
-
-            Results: {results}
-            """
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
@@ -107,15 +97,11 @@ def summarize_results(question: str, results: List[Dict]) -> str:
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"[LLM Error, using fallback summary] {e}")
+            print(f"[OpenAI Error, trying Gemini] {e}")
 
-    elif gemini_client:
+    # Try Gemini next
+    if gemini_client:
         try:
-            prompt = f"""
-            Summarize the following results for the question: "{question}"
-
-            Results: {results}
-            """
             response = gemini_client.generate_content(prompt)
             return response.text.strip()
         except Exception as e:
