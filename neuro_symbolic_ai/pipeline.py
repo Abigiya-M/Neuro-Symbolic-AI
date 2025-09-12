@@ -1,11 +1,3 @@
-"""
-pipeline.py
-Run this script to interactively ask questions and get answers from the neuro-symbolic pipeline.
-
-Usage examples:
-  python pipeline.py --question "Which genes are associated with breast_cancer?"
-  python pipeline.py   # interactive mode
-"""
 import argparse
 from prolog_kb import parse_genes_pl, available_traits, query_dsl
 from llm_client import generate_queries, summarize_results
